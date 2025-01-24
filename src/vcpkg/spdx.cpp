@@ -295,11 +295,14 @@ Json::Object vcpkg::run_resource_heuristics(StringView contents, StringView vers
 std::string vcpkg::create_spdx_sbom(const InstallPlanAction& action,
                                     View<Path> relative_paths,
                                     View<std::string> hashes,
+                                    View<Path> relative_package_paths,
+                                    View<std::string> package_hashes,
                                     std::string created_time,
                                     std::string document_namespace,
                                     std::vector<Json::Object>&& resource_docs)
 {
     Checks::check_exit(VCPKG_LINE_INFO, relative_paths.size() == hashes.size());
+    Checks::check_exit(VCPKG_LINE_INFO, relative_package_paths.size() == package_hashes.size());
 
     const auto& scfl = action.source_control_file_and_location.value_or_exit(VCPKG_LINE_INFO);
     const auto& cpgh = *scfl.source_control_file->core_paragraph;
@@ -373,12 +376,22 @@ std::string vcpkg::create_spdx_sbom(const InstallPlanAction& action,
         }
     }
 
+    std::vector<Path> all_files;
+    all_files.reserve(relative_paths.size() + relative_package_paths.size());
+    all_files.insert(all_files.end(), relative_paths.begin(), relative_paths.end());
+    all_files.insert(all_files.end(), relative_package_paths.begin(), relative_package_paths.end());
+
+    std::vector<std::string> all_hashes;
+    all_hashes.reserve(hashes.size() + package_hashes.size());
+    all_hashes.insert(all_hashes.end(), hashes.begin(), hashes.end());
+    all_hashes.insert(all_hashes.end(), package_hashes.begin(), package_hashes.end());
+
     auto& files = doc.insert(JsonIdFiles, Json::Array());
     {
-        for (size_t i = 0; i < relative_paths.size(); ++i)
+        for (size_t i = 0; i < all_files.size(); ++i)
         {
-            const auto& path = relative_paths[i];
-            const auto& hash = hashes[i];
+            const auto& path = all_files[i];
+            const auto& hash = all_hashes[i];
 
             auto& obj = files.push_back(Json::Object());
             obj.insert(SpdxFileName, "./" + path.generic_u8string());
