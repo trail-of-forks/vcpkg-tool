@@ -122,6 +122,8 @@ TEST_CASE ("spdx maximum serialization", "[spdx]")
         create_spdx_sbom(ipa,
                          std::vector<Path>{"vcpkg.json", "portfile.cmake", "patches/patch1.diff"},
                          std::vector<std::string>{"vcpkg.json-hash", "portfile.cmake-hash", "patch1.diff-hash"},
+                         {},
+                         {},
                          "now",
                          "https://test-document-namespace",
                          {});
@@ -276,6 +278,8 @@ TEST_CASE ("spdx minimum serialization", "[spdx]")
     const auto sbom = create_spdx_sbom(ipa,
                                        std::vector<Path>{"vcpkg.json", "portfile.cmake"},
                                        std::vector<std::string>{"hash-vcpkg.json", "hash-portfile.cmake"},
+                                       {},
+                                       {},
                                        "now+1",
                                        "https://test-document-namespace-2",
                                        {});
@@ -419,7 +423,7 @@ TEST_CASE ("spdx concat resources", "[spdx]")
                     .value(VCPKG_LINE_INFO)
                     .value.object(VCPKG_LINE_INFO);
 
-    const auto sbom = create_spdx_sbom(ipa, {}, {}, "now+1", "ns", {std::move(doc1), std::move(doc2)});
+    const auto sbom = create_spdx_sbom(ipa, {}, {}, {}, {}, "now+1", "ns", {std::move(doc1), std::move(doc2)});
 
     auto expected = Json::parse(R"json(
 {
