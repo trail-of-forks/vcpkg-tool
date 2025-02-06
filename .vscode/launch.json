@@ -5,6 +5,23 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "vcpkg bin",
+      "request": "launch",
+      "type": "cppdbg",
+      "program": "${workspaceRoot}/out/build/linux-ci/vcpkg",
+      "args": ["install", "--binarysource=clear", "spdlog"],
+      "cwd": "${workspaceRoot}",
+      "targetArchitecture": "arm64",
+      "environment": [
+        {
+          "name": "VCPKG_ROOT",
+          "value": "${env:HOME}/vcpkg"
+        }
+      ],
+      "console": "integratedTerminal",
+      "MIMode": "gdb"
+    },
+    {
       "name": "vcpkg-ce cli",
       "request": "launch",
       "type": "node",

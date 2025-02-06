@@ -39,6 +39,7 @@ namespace vcpkg
         void make_generic();
         void clear();
         Path lexically_normal() const;
+        Path lexically_relative(const Path& base) const;
 
         // Sets *this to parent_path, returns whether anything was removed
         bool make_parent_path();

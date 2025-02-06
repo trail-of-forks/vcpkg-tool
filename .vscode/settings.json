@@ -100,5 +100,11 @@
     "typeinfo": "cpp",
     "variant": "cpp",
     "__bit_reference": "cpp"
-  }
+  },
+  "clangd.arguments": [
+    "--compile-commands-dir=/home/erickilmer/vcpkg-tool/out/build/linux-ci"
+  ],
+  "C_Cpp.default.compileCommands": [
+    ""
+  ]
 }
