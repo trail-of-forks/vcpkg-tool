@@ -1343,6 +1343,23 @@ namespace vcpkg
         return normalized;
     }
 
+    Path Path::lexically_relative(const Path& base) const
+    {
+        auto norm_this = this->lexically_normal();
+        auto norm_base = base.lexically_normal();
+
+        StringView this_sv = norm_this;
+        StringView base_sv = norm_base;
+
+        if (Strings::starts_with(this_sv, base_sv))
+        {
+            auto relative_part = this_sv.substr(base_sv.size());
+            return find_relative_path(relative_part.data(), relative_part.data() + relative_part.size());
+        }
+
+        return *this;
+    }
+
     bool Path::make_parent_path()
     {
         const auto parent = parent_path();

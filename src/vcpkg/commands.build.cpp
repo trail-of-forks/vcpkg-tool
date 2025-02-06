@@ -1328,7 +1328,8 @@ namespace vcpkg
         auto& scf = scfl.source_control_file;
         abi_info.package_abi = Hash::get_string_sha256(full_abi_info);
         abi_info.abi_tag_file.emplace(std::move(abi_file_path));
-        abi_info.relative_port_files = std::move(files);
+        abi_info.relative_port_files =
+            Util::fmap(std::move(files), [&port_dir](const Path& p) { return p.lexically_relative(port_dir); });
         abi_info.relative_port_hashes = std::move(hashes);
         abi_info.heuristic_resources.push_back(
             run_resource_heuristics(portfile_cmake_contents, scf->core_paragraph->version.text));
