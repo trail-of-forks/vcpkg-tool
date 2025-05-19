@@ -5,6 +5,33 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Install spdlog",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceRoot}/out/build/macos-ci/vcpkg",
+      "args": [
+        "install",
+        "--overlay-ports=${workspaceRoot}/port-overlays",
+        "spdlog:arm64-osx-release",
+        "--binarysource=clear",
+        "--x-install-root=${workspaceRoot}/install"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${fileDirname}",
+      "environment": [
+        {
+          "name": "VCPKG_ROOT",
+          "value": "/Users/ekilmer/src/eboss/src/vcpkg"
+        },
+        {
+          "name": "VCPKG_FORCE_SYSTEM_BINARIES",
+          "value": "1"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "lldb"
+    },
+    {
       "name": "vcpkg-ce cli",
       "request": "launch",
       "type": "node",
