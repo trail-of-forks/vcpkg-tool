@@ -94,11 +94,18 @@ namespace
         return "Unknown";
     }
 
-    // Extract header file paths for a specific package from its .list file
-    std::vector<std::string> extract_header_paths(const VcpkgPaths& paths,
-                                                  Triplet triplet,
-                                                  const std::string& package_name,
-                                                  const std::string& package_version)
+    // Structure to hold optimized path information
+    struct OptimizedPathSet
+    {
+        std::vector<std::string> directories;      // Complete directories owned by this package
+        std::vector<std::string> individual_files; // Individual files not covered by directories
+    };
+
+    // Extract all header file paths (raw) for a specific package from its .list file
+    std::vector<std::string> extract_raw_header_paths(const VcpkgPaths& paths,
+                                                      Triplet triplet,
+                                                      const std::string& package_name,
+                                                      const std::string& package_version)
     {
         std::vector<std::string> header_paths;
 
@@ -153,6 +160,154 @@ namespace
         }
 
         return header_paths;
+    }
+
+    // Optimize header paths to find minimal non-overlapping sets
+    OptimizedPathSet optimize_header_paths(const std::vector<std::string>& raw_paths,
+                                           const std::map<std::string, std::vector<std::string>>& all_packages_paths,
+                                           const std::string& package_name)
+    {
+        OptimizedPathSet result;
+
+        if (raw_paths.empty())
+        {
+            return result;
+        }
+
+        // Separate individual files from directories
+        std::vector<std::string> files;
+        std::vector<std::string> existing_dirs;
+
+        for (const auto& path : raw_paths)
+        {
+            if (path.back() == '/' || path.back() == '\\')
+            {
+                existing_dirs.push_back(path);
+            }
+            else
+            {
+                files.push_back(path);
+            }
+        }
+
+        // Build a map of directories to files they contain
+        std::map<std::string, std::vector<std::string>> dir_to_files;
+
+        for (const auto& file : files)
+        {
+            // Find the directory containing this file
+            size_t last_separator = file.find_last_of("/\\");
+            if (last_separator != std::string::npos)
+            {
+                std::string dir_path = file.substr(0, last_separator + 1);
+                dir_to_files[dir_path].push_back(file);
+            }
+            else
+            {
+                // File in root include directory
+                result.individual_files.push_back(file);
+            }
+        }
+
+        // For each directory, check if we own all files in it (no conflicts with other packages)
+        for (const auto& [dir_path, files_in_dir] : dir_to_files)
+        {
+            bool directory_is_exclusive = true;
+
+            // Check if any other package has files in this directory
+            for (const auto& [other_package, other_paths] : all_packages_paths)
+            {
+                if (other_package == package_name) continue;
+
+                for (const auto& other_path : other_paths)
+                {
+                    // Skip directory entries for this check
+                    if (other_path.back() == '/' || other_path.back() == '\\') continue;
+
+                    // Check if this other file is in our directory
+                    if (other_path.find(dir_path) == 0)
+                    {
+                        directory_is_exclusive = false;
+                        break;
+                    }
+                }
+
+                if (!directory_is_exclusive) break;
+            }
+
+            if (directory_is_exclusive)
+            {
+                // We can represent this directory as a single entry
+                result.directories.push_back(dir_path);
+            }
+            else
+            {
+                // Add individual files since directory is shared
+                for (const auto& file : files_in_dir)
+                {
+                    result.individual_files.push_back(file);
+                }
+            }
+        }
+
+        // Add any existing directory entries that were explicitly listed
+        for (const auto& dir : existing_dirs)
+        {
+            // Check if this directory is not already covered by our optimized directories
+            bool already_covered = false;
+            for (const auto& opt_dir : result.directories)
+            {
+                if (dir.find(opt_dir) == 0 || opt_dir.find(dir) == 0)
+                {
+                    already_covered = true;
+                    break;
+                }
+            }
+
+            if (!already_covered)
+            {
+                result.directories.push_back(dir);
+            }
+        }
+
+        // Final optimization: Remove redundant nested directories within this package
+        // Sort directories by length (shorter first) so we can identify parent-child relationships
+        std::sort(result.directories.begin(), result.directories.end(), [](const std::string& a, const std::string& b) {
+            return a.length() < b.length();
+        });
+
+        std::vector<std::string> optimized_directories;
+        for (const auto& dir : result.directories)
+        {
+            bool is_redundant = false;
+            for (const auto& parent_dir : optimized_directories)
+            {
+                // If this directory is a subdirectory of an already included parent directory
+                if (dir.find(parent_dir) == 0 && dir.length() > parent_dir.length())
+                {
+                    is_redundant = true;
+                    break;
+                }
+            }
+
+            if (!is_redundant)
+            {
+                optimized_directories.push_back(dir);
+            }
+        }
+
+        result.directories = std::move(optimized_directories);
+
+        return result;
+    }
+
+    // Extract header file paths for a specific package from its .list file (wrapper for compatibility)
+    std::vector<std::string> extract_header_paths(const VcpkgPaths& paths,
+                                                  Triplet triplet,
+                                                  const std::string& package_name,
+                                                  const std::string& package_version)
+    {
+        return extract_raw_header_paths(paths, triplet, package_name, package_version);
     }
 
     // Extract installed packages for the given triplet from status database
@@ -246,8 +401,36 @@ namespace vcpkg
 
         try
         {
-            // Extract installed packages for this triplet
-            const auto packages = extract_installed_packages(paths, triplet);
+            // Extract installed packages for this triplet (without header paths optimization yet)
+            auto packages = extract_installed_packages(paths, triplet);
+
+            // First pass: collect all raw header paths for all packages
+            std::map<std::string, std::vector<std::string>> all_packages_paths;
+            for (auto& package : packages)
+            {
+                if (!package.header_paths.empty()) // Only process packages that have headers
+                {
+                    all_packages_paths[package.name] = package.header_paths;
+                }
+            }
+
+            // Second pass: optimize header paths for each package
+            for (auto& package : packages)
+            {
+                if (!package.header_paths.empty())
+                {
+                    const auto optimized =
+                        optimize_header_paths(package.header_paths, all_packages_paths, package.name);
+
+                    // Convert OptimizedPathSet back to vector<string> for compatibility
+                    package.header_paths.clear();
+                    package.header_paths.insert(
+                        package.header_paths.end(), optimized.directories.begin(), optimized.directories.end());
+                    package.header_paths.insert(package.header_paths.end(),
+                                                optimized.individual_files.begin(),
+                                                optimized.individual_files.end());
+                }
+            }
 
             // Generate mapping file content
             const auto content = generate_mapping_content(packages, triplet);
