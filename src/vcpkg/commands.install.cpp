@@ -19,6 +19,7 @@
 #include <vcpkg/documentation.h>
 #include <vcpkg/input.h>
 #include <vcpkg/installedpaths.h>
+#include <vcpkg/librarymapping.h>
 #include <vcpkg/metrics.h>
 #include <vcpkg/paragraphs.h>
 #include <vcpkg/portfileprovider.h>
@@ -29,6 +30,7 @@
 #include <vcpkg/xunitwriter.h>
 
 #include <iterator>
+#include <set>
 
 namespace vcpkg
 {
@@ -687,6 +689,19 @@ namespace vcpkg
 
         database_load_collapse(fs, paths.installed());
         summary.elapsed = timer.elapsed();
+
+        // Generate library mapping files for all triplets that had packages installed
+        std::set<Triplet> installed_triplets;
+        for (const auto& install_action : action_plan.install_actions)
+        {
+            installed_triplets.insert(install_action.spec.triplet());
+        }
+
+        for (const auto& triplet : installed_triplets)
+        {
+            regenerate_library_mappings_file(paths, triplet);
+        }
+
         return summary;
     }
 
