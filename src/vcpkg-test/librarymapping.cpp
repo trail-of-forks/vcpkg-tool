@@ -189,3 +189,139 @@ TEST_CASE ("librarymapping optimization - directory sorting and nesting", "[libr
     CHECK(result.directories[0] == "/usr/local/include/boost/fusion/");
     CHECK(result.individual_files.empty());
 }
+
+TEST_CASE ("librarymapping optimization - incremental package addition", "[librarymapping]")
+{
+    // Test case: Verify optimization is recalculated when packages are added incrementally
+
+    // Start with fmt package alone
+    std::vector<std::string> fmt_paths = {"/usr/local/include/fmt/core.h", "/usr/local/include/fmt/format.h"};
+    std::map<std::string, std::vector<std::string>> packages_stage1 = {{"fmt", fmt_paths}};
+    auto fmt_result = optimize_header_paths(fmt_paths, packages_stage1, "fmt");
+
+    // fmt should get the directory since it's exclusive
+    REQUIRE(fmt_result.directories.size() == 1);
+    CHECK(fmt_result.directories[0] == "/usr/local/include/fmt/");
+    CHECK(fmt_result.individual_files.empty());
+
+    // Add boost package that shares a root directory
+    std::vector<std::string> boost_paths = {"/usr/local/include/boost/algorithm.hpp",
+                                            "/usr/local/include/boost/format.hpp"};
+    std::map<std::string, std::vector<std::string>> packages_stage2 = {{"fmt", fmt_paths}, {"boost", boost_paths}};
+
+    // Re-optimize both packages with new conflict information
+    auto fmt_result2 = optimize_header_paths(fmt_paths, packages_stage2, "fmt");
+    auto boost_result = optimize_header_paths(boost_paths, packages_stage2, "boost");
+
+    // Both should still get their respective directories since they don't conflict
+    REQUIRE(fmt_result2.directories.size() == 1);
+    CHECK(fmt_result2.directories[0] == "/usr/local/include/fmt/");
+    CHECK(fmt_result2.individual_files.empty());
+
+    REQUIRE(boost_result.directories.size() == 1);
+    CHECK(boost_result.directories[0] == "/usr/local/include/boost/");
+    CHECK(boost_result.individual_files.empty());
+}
+
+TEST_CASE ("librarymapping optimization - incremental with directory conflicts", "[librarymapping]")
+{
+    // Test case: Verify that adding a package that creates conflicts triggers re-optimization
+
+    // Start with package1 that owns a directory
+    std::vector<std::string> package1_paths = {"/usr/local/include/shared/file1.hpp"};
+    std::map<std::string, std::vector<std::string>> packages_stage1 = {{"package1", package1_paths}};
+    auto result1_alone = optimize_header_paths(package1_paths, packages_stage1, "package1");
+
+    // package1 should get the directory since it's exclusive
+    REQUIRE(result1_alone.directories.size() == 1);
+    CHECK(result1_alone.directories[0] == "/usr/local/include/shared/");
+    CHECK(result1_alone.individual_files.empty());
+
+    // Add package2 that conflicts with the same directory
+    std::vector<std::string> package2_paths = {"/usr/local/include/shared/file2.hpp"};
+    std::map<std::string, std::vector<std::string>> packages_stage2 = {{"package1", package1_paths},
+                                                                       {"package2", package2_paths}};
+
+    // Re-optimize both packages - now they should conflict and fall back to individual files
+    auto result1_conflict = optimize_header_paths(package1_paths, packages_stage2, "package1");
+    auto result2_conflict = optimize_header_paths(package2_paths, packages_stage2, "package2");
+
+    // Both should now use individual files since directory is shared
+    CHECK(result1_conflict.directories.empty());
+    REQUIRE(result1_conflict.individual_files.size() == 1);
+    CHECK(result1_conflict.individual_files[0] == "/usr/local/include/shared/file1.hpp");
+
+    CHECK(result2_conflict.directories.empty());
+    REQUIRE(result2_conflict.individual_files.size() == 1);
+    CHECK(result2_conflict.individual_files[0] == "/usr/local/include/shared/file2.hpp");
+}
+
+TEST_CASE ("librarymapping optimization - incremental separate directory optimization", "[librarymapping]")
+{
+    // Test case: Verify that adding packages with separate directories maintains optimization
+
+    // Start with boost-algorithm
+    std::vector<std::string> algorithm_paths = {"/usr/local/include/boost/algorithm/string.hpp",
+                                                "/usr/local/include/boost/algorithm/searching.hpp"};
+    std::map<std::string, std::vector<std::string>> packages_stage1 = {{"boost-algorithm", algorithm_paths}};
+    auto algorithm_result1 = optimize_header_paths(algorithm_paths, packages_stage1, "boost-algorithm");
+
+    // Should get algorithm directory
+    REQUIRE(algorithm_result1.directories.size() == 1);
+    CHECK(algorithm_result1.directories[0] == "/usr/local/include/boost/algorithm/");
+
+    // Add boost-format with separate directory structure
+    std::vector<std::string> format_paths = {"/usr/local/include/boost/format.hpp",
+                                             "/usr/local/include/boost/format/format.hpp"};
+    std::map<std::string, std::vector<std::string>> packages_stage2 = {{"boost-algorithm", algorithm_paths},
+                                                                       {"boost-format", format_paths}};
+
+    // Re-optimize - both should maintain their separate optimizations
+    auto algorithm_result2 = optimize_header_paths(algorithm_paths, packages_stage2, "boost-algorithm");
+    auto format_result = optimize_header_paths(format_paths, packages_stage2, "boost-format");
+
+    // boost-algorithm should still own its directory
+    REQUIRE(algorithm_result2.directories.size() == 1);
+    CHECK(algorithm_result2.directories[0] == "/usr/local/include/boost/algorithm/");
+    CHECK(algorithm_result2.individual_files.empty());
+
+    // boost-format should get its directory plus the root file
+    REQUIRE(format_result.directories.size() == 1);
+    CHECK(format_result.directories[0] == "/usr/local/include/boost/format/");
+    REQUIRE(format_result.individual_files.size() == 1);
+    CHECK(format_result.individual_files[0] == "/usr/local/include/boost/format.hpp");
+}
+
+TEST_CASE ("librarymapping optimization - global directory conflict resolution", "[librarymapping]")
+{
+    // Test case: Verify that multiple packages claiming same directory are resolved to individual files
+
+    // Three packages all wanting to claim /usr/local/include/boost/ directory
+    std::vector<std::string> boost_array_paths = {"/usr/local/include/boost/array.hpp"};
+    std::vector<std::string> boost_assert_paths = {"/usr/local/include/boost/assert.hpp",
+                                                   "/usr/local/include/boost/current_function.hpp"};
+    std::vector<std::string> boost_static_paths = {"/usr/local/include/boost/static_assert.hpp"};
+
+    std::map<std::string, std::vector<std::string>> all_packages = {{"boost-array", boost_array_paths},
+                                                                    {"boost-assert", boost_assert_paths},
+                                                                    {"boost-static-assert", boost_static_paths}};
+
+    // Each package individually would claim /boost/ directory, but conflict resolution should prevent this
+    auto array_result = optimize_header_paths(boost_array_paths, all_packages, "boost-array");
+    auto assert_result = optimize_header_paths(boost_assert_paths, all_packages, "boost-assert");
+    auto static_result = optimize_header_paths(boost_static_paths, all_packages, "boost-static-assert");
+
+    // All packages should fall back to individual files since they conflict at /boost/ level
+    CHECK(array_result.directories.empty());
+    REQUIRE(array_result.individual_files.size() == 1);
+    CHECK(array_result.individual_files[0] == "/usr/local/include/boost/array.hpp");
+
+    CHECK(assert_result.directories.empty());
+    REQUIRE(assert_result.individual_files.size() == 2);
+    CHECK(assert_result.individual_files[0] == "/usr/local/include/boost/assert.hpp");
+    CHECK(assert_result.individual_files[1] == "/usr/local/include/boost/current_function.hpp");
+
+    CHECK(static_result.directories.empty());
+    REQUIRE(static_result.individual_files.size() == 1);
+    CHECK(static_result.individual_files[0] == "/usr/local/include/boost/static_assert.hpp");
+}

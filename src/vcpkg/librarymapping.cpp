@@ -3,6 +3,7 @@
 #include <vcpkg/base/messages.h>
 #include <vcpkg/base/strings.h>
 #include <vcpkg/base/stringview.h>
+#include <vcpkg/base/system.debug.h>
 
 #include <vcpkg/installedpaths.h>
 #include <vcpkg/librarymapping.h>
@@ -88,7 +89,7 @@ namespace
         }
         catch (...)
         {
-            // Return unknown if SPDX parsing fails
+            Debug::println("Failed to parse SPDX for package ", package_name, " on triplet ", triplet.canonical_name());
         }
 
         return "Unknown";
@@ -155,15 +156,6 @@ namespace
         return header_paths;
     }
 
-    // Extract header file paths for a specific package from its .list file (wrapper for compatibility)
-    std::vector<std::string> extract_header_paths(const VcpkgPaths& paths,
-                                                  Triplet triplet,
-                                                  const std::string& package_name,
-                                                  const std::string& package_version)
-    {
-        return extract_raw_header_paths(paths, triplet, package_name, package_version);
-    }
-
     // Extract installed packages for the given triplet from status database
     std::vector<PackageInfo> extract_installed_packages(const VcpkgPaths& paths, Triplet triplet)
     {
@@ -190,7 +182,7 @@ namespace
                     package.license = extract_license_from_spdx(paths, triplet, package.name);
 
                     // Extract header paths from package files
-                    package.header_paths = extract_header_paths(paths, triplet, package.name, package.version);
+                    package.header_paths = extract_raw_header_paths(paths, triplet, package.name, package.version);
 
                     // Only include packages that have header files
                     if (!package.header_paths.empty())
@@ -408,12 +400,71 @@ namespace vcpkg
             }
 
             // Second pass: optimize header paths for each package
+            std::map<std::string, OptimizedPathSet> optimized_results;
             for (auto& package : packages)
             {
                 if (!package.header_paths.empty())
                 {
-                    const auto optimized =
+                    optimized_results[package.name] =
                         optimize_header_paths(package.header_paths, all_packages_paths, package.name);
+                }
+            }
+
+            // Third pass: resolve directory conflicts - if multiple packages claim the same directory,
+            // force them all to use individual files instead
+            std::map<std::string, std::vector<std::string>> directory_to_packages;
+            for (const auto& [pkg_name, opt_result] : optimized_results)
+            {
+                for (const auto& dir : opt_result.directories)
+                {
+                    directory_to_packages[dir].push_back(pkg_name);
+                }
+            }
+
+            // Find conflicted directories and fix them
+            for (const auto& [dir_path, claiming_packages] : directory_to_packages)
+            {
+                if (claiming_packages.size() > 1)
+                {
+                    // Multiple packages claim this directory - force all to use individual files
+                    for (const auto& pkg_name : claiming_packages)
+                    {
+                        auto& opt_result = optimized_results[pkg_name];
+
+                        // Remove the conflicted directory
+                        opt_result.directories.erase(
+                            std::remove(opt_result.directories.begin(), opt_result.directories.end(), dir_path),
+                            opt_result.directories.end());
+
+                        // Add back individual files for this package that were in that directory
+                        const auto& raw_paths = all_packages_paths[pkg_name];
+                        for (const auto& path : raw_paths)
+                        {
+                            // Skip directories in raw paths
+                            if (path.back() == '/' || path.back() == '\\') continue;
+
+                            // If this file was in the conflicted directory, add it as individual file
+                            if (path.find(dir_path) == 0)
+                            {
+                                // Make sure it's not already in individual_files
+                                if (std::find(opt_result.individual_files.begin(),
+                                              opt_result.individual_files.end(),
+                                              path) == opt_result.individual_files.end())
+                                {
+                                    opt_result.individual_files.push_back(path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fourth pass: apply the resolved optimizations to packages
+            for (auto& package : packages)
+            {
+                if (!package.header_paths.empty())
+                {
+                    const auto& optimized = optimized_results[package.name];
 
                     // Convert OptimizedPathSet back to vector<string> for compatibility
                     package.header_paths.clear();

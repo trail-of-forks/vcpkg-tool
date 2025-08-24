@@ -414,7 +414,11 @@ namespace vcpkg
                     install_package(paths, action.package_dir.value_or_exit(VCPKG_LINE_INFO), *bcf, &status_db);
                 switch (install_result)
                 {
-                    case InstallResult::SUCCESS: code = BuildResult::Succeeded; break;
+                    case InstallResult::SUCCESS:
+                        code = BuildResult::Succeeded;
+                        // Regenerate library mappings
+                        regenerate_library_mappings_file(paths, bcf->core_paragraph.spec.triplet());
+                        break;
                     case InstallResult::FILE_CONFLICTS: code = BuildResult::FileConflicts; break;
                     default: Checks::unreachable(VCPKG_LINE_INFO);
                 }
@@ -689,18 +693,6 @@ namespace vcpkg
 
         database_load_collapse(fs, paths.installed());
         summary.elapsed = timer.elapsed();
-
-        // Generate library mapping files for all triplets that had packages installed
-        std::set<Triplet> installed_triplets;
-        for (const auto& install_action : action_plan.install_actions)
-        {
-            installed_triplets.insert(install_action.spec.triplet());
-        }
-
-        for (const auto& triplet : installed_triplets)
-        {
-            regenerate_library_mappings_file(paths, triplet);
-        }
 
         return summary;
     }
