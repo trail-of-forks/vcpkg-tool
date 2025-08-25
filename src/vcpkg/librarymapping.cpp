@@ -96,20 +96,17 @@ namespace
     }
 
     // Extract all header file paths (raw) for a specific package from its .list file
-    std::vector<std::string> extract_raw_header_paths(const VcpkgPaths& paths,
-                                                      Triplet triplet,
-                                                      const std::string& package_name,
-                                                      const std::string& package_version)
+    std::vector<std::string> extract_raw_header_paths(const VcpkgPaths& paths, const BinaryParagraph& package)
     {
         std::vector<std::string> header_paths;
 
         try
         {
             const auto& fs = paths.get_filesystem();
+            const auto triplet = package.spec.triplet();
 
-            // Build the .list file path: installed/vcpkg/info/<package>_<version>_<triplet>.list
-            const auto list_filename = fmt::format("{}_{}_{}", package_name, package_version, triplet.canonical_name());
-            const auto list_path = paths.installed().vcpkg_dir() / "info" / (list_filename + ".list");
+            // Use the proper API to get the .list file path
+            const auto list_path = paths.installed().listfile_path(package);
 
             if (!fs.exists(list_path, IgnoreErrors{}))
             {
@@ -176,13 +173,13 @@ namespace
                 {
                     PackageInfo package;
                     package.name = status_paragraph.package.spec.name();
-                    package.version = status_paragraph.package.version.to_string();
+                    package.version = status_paragraph.package.version.text;
 
                     // Extract license information from SPDX file
                     package.license = extract_license_from_spdx(paths, triplet, package.name);
 
                     // Extract header paths from package files
-                    package.header_paths = extract_raw_header_paths(paths, triplet, package.name, package.version);
+                    package.header_paths = extract_raw_header_paths(paths, status_paragraph.package);
 
                     // Only include packages that have header files
                     if (!package.header_paths.empty())
