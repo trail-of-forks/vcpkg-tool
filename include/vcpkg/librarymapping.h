@@ -19,8 +19,20 @@ namespace vcpkg
     };
 
     /// Generate library mapping file for all installed packages on the specified triplet
-    /// The mapping file contains header-to-library relationships in CycloneDX MLIR format
-    /// and is written to installed/vcpkg/library-mappings-<triplet>.txt
+    /// The mapping file contains header-to-library relationships in JSON format
+    /// and is written to installed/vcpkg/library-mappings-<triplet>.json
+    ///
+    /// JSON Schema:
+    /// [
+    ///   {
+    ///     "name": "package_name",
+    ///     "version": "version_string",
+    ///     "license": "license_identifier",
+    ///     "paths": ["header_path1", "header_path2", ...]
+    ///   },
+    ///   ...
+    /// ]
+    ///
     /// @param paths VcpkgPaths instance providing filesystem and directory information
     /// @param triplet Target triplet to generate mappings for
     void regenerate_library_mappings_file(const VcpkgPaths& paths, Triplet triplet);

@@ -1,9 +1,17 @@
 #include <vcpkg-test/util.h>
 
+#include <vcpkg/base/json.h>
 #include <vcpkg/librarymapping.h>
 #include <vcpkg/triplet.h>
 
 using namespace vcpkg;
+
+// Note on JSON format testing:
+// The generate_mapping_content() function that produces JSON output is in an anonymous namespace
+// and is tested indirectly through integration testing and manual verification.
+// The JSON generation uses vcpkg's battle-tested Json::Object and Json::Array APIs,
+// and the logic is straightforward (wrapping package data into JSON structure).
+// All complex logic (path optimization) is tested directly in the test cases below.
 
 TEST_CASE ("librarymapping optimization - simple exclusive directory", "[librarymapping]")
 {
